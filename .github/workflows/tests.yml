@@ -7,7 +7,7 @@ on:
     branches: [ main, master ]
 
 jobs:
-  build-and-test:
+  linux-test:
     runs-on: ubuntu-latest
     
     steps:
@@ -17,89 +17,59 @@ jobs:
     - name: Install build tools
       run: sudo apt-get update && sudo apt-get install -y build-essential gcc make
       
-    - name: Compile main library
+    - name: Compile and run tests on Linux
       run: |
+        # Компилируем основную библиотеку
         gcc -c src/set_iterator.c -Iinclude -o src/set_iterator.o
-        ar rcs libset_iterator.a src/set_iterator.o
         
-    - name: Compile tests
-      run: |
+        # Компилируем тесты
         gcc -c test/test.c -Iinclude -o test/test.o
-        gcc test/test.o -L. -lset_iterator -o test/run/tests.exe
         
-    - name: Run tests
-      run: |
-        cd test/run
-        ./tests.exe
+        # Линкуем и запускаем тесты
+        gcc test/test.o src/set_iterator.o -o test_executable
+        ./test_executable
+        
+        # Проверяем код возврата
         if [ $? -eq 0 ]; then
-          echo "✅ All tests passed!"
+          echo "All tests passed on Linux!"
         else
-          echo "❌ Tests failed!"
+          echo "Tests failed on Linux!"
           exit 1
         fi
-        
-    - name: Clean build artifacts
-      run: |
-        rm -f src/*.o test/*.o libset_iterator.a
 
   windows-test:
     runs-on: windows-latest
-    needs: build-and-test
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup MSVC environment
-      uses: ilammy/msvc-dev-cmd@v1
+    - name: Install MinGW for Windows
+      run: choco install mingw -y
       
-    - name: Compile for Windows
+    - name: Set up PATH for MinGW
       run: |
-        cl /c src/set_iterator.c /Iinclude /Fosrc/set_iterator.obj
-        lib /OUT:libset_iterator.lib src/set_iterator.obj
-        cl /c test/test.c /Iinclude /Fotest/test.obj
-        link test/test.obj libset_iterator.lib /OUT:test/run/tests.exe
+        $mingwPath = "C:\MinGW\bin"
+        $env:PATH = "$mingwPath;$env:PATH"
+        echo "PATH=$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
+      
+    - name: Compile and run tests on Windows
+      run: |
+        # Компилируем основную библиотеку
+        gcc -c src/set_iterator.c -Iinclude -o src/set_iterator.o
         
-    - name: Run Windows tests
-      run: |
-        cd test/run
-        tests.exe
+        # Компилируем тесты
+        gcc -c test/test.c -Iinclude -o test/test.o
+        
+        # Линкуем и запускаем тесты
+        gcc test/test.o src/set_iterator.o -o test_executable.exe
+        
+        # Запускаем тесты
+        .\test_executable.exe
+        
         if ($LASTEXITCODE -eq 0) {
-          Write-Host "✅ All tests passed on Windows!"
+          Write-Host "All tests passed on Windows!"
         } else {
-          Write-Host "❌ Tests failed on Windows!"
+          Write-Host "Tests failed on Windows!"
           exit 1
         }
-
-  test-coverage:
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Install coverage tools
-      run: sudo apt-get install -y gcovr lcov
-      
-    - name: Compile with coverage
-      run: |
-        gcc -c src/set_iterator.c -Iinclude -fprofile-arcs -ftest-coverage -o src/set_iterator.o
-        gcc -c test/test.c -Iinclude -fprofile-arcs -ftest-coverage -o test/test.o
-        gcc test/test.o src/set_iterator.o -lgcov -o test/run/tests_coverage.exe
-        
-    - name: Run tests with coverage
-      run: |
-        cd test/run
-        ./tests_coverage.exe
-        
-    - name: Generate coverage report
-      run: |
-        gcovr --root . --exclude "test/" --html --html-details -o coverage_report.html
-        gcovr --root . --exclude "test/" --print-summary
-        
-    - name: Upload coverage report
-      uses: actions/upload-artifact@v4
-      with:
-        name: coverage-report
-        path: coverage_report.html
